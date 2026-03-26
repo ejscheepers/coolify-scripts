@@ -44,6 +44,9 @@ else
     done
 fi
 
+# Always include cleanup.sh
+SCRIPTS+=("cleanup.sh")
+
 # Deduplicate
 SCRIPTS=($(printf '%s\n' "${SCRIPTS[@]}" | sort -u))
 
