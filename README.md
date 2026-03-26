@@ -23,7 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/in
 curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/install.sh | INSTALL=converter bash
 ```
 
-Available names: `backup`, `transfer`, `restore`, `converter`
+Available names: `backup`, `transfer`, `restore`, `converter`, `cleanup`
 
 ## Scripts
 
@@ -82,6 +82,19 @@ sudo ./coolify-stack-converter.sh
 - Aborts if pg_dump produces an empty file
 - Auto-detects Coolify-assigned Redis passwords
 - Cleans up temp files on failure
+
+### `cleanup.sh` — Uninstall & Clean Up
+
+Removes all installed scripts and optionally deletes backup files.
+
+```bash
+./cleanup.sh
+```
+
+- Shows what will be removed before prompting
+- Separately confirms script deletion and backup deletion
+- Reports backup directory size and file count
+- Optionally removes itself when done
 
 ## Typical Migration Workflow
 

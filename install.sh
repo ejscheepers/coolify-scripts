@@ -20,9 +20,10 @@ declare -A SCRIPT_MAP=(
     [transfer]="transfer.sh"
     [restore]="restore.sh"
     [converter]="coolify-stack-converter.sh"
+    [cleanup]="cleanup.sh"
 )
 
-ALL_SCRIPTS=("backup.sh" "transfer.sh" "restore.sh" "coolify-stack-converter.sh")
+ALL_SCRIPTS=("backup.sh" "transfer.sh" "restore.sh" "coolify-stack-converter.sh" "cleanup.sh")
 
 # --- Resolve INSTALL env var ---
 SCRIPTS=()
@@ -79,6 +80,7 @@ for SCRIPT in "${SCRIPTS[@]}"; do
         transfer.sh)                  echo "  ./transfer.sh                    # Transfer backups via Tailscale" ;;
         restore.sh)                   echo "  ./restore.sh                     # Restore a backup into a volume" ;;
         coolify-stack-converter.sh)   echo "  sudo ./coolify-stack-converter.sh # Migrate standalone stack to Coolify" ;;
+        cleanup.sh)                   echo "  ./cleanup.sh                     # Remove scripts and backups" ;;
     esac
 done
 echo ""
