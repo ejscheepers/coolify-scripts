@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # === Coolify Stack Converter ===
-# Migrates a standalone Docker Compose stack (bind-mount DBs) into
-# Coolify-managed dedicated database containers with Docker volumes.
+# Migrates Docker Compose stacks between environments (standalone <-> Coolify).
+# Supports Redis data in Docker volumes or bind-mount directories.
 # Handles: PostgreSQL (pg_dump/psql) + Redis (physical file copy).
 
 SCRIPT_NAME="Stack Converter"
@@ -58,8 +58,20 @@ prompt "OLD Postgres Container ID/Name: "
 read -r OLD_PG
 prompt "OLD Redis Container ID/Name: "
 read -r OLD_REDIS
-prompt "OLD Redis Data Path (e.g. /data/stack/redis/): "
-read -r REDIS_OLD_PATH
+
+prompt "OLD Redis storage type — (v)olume or (d)irectory? [v/d]: "
+read -r REDIS_OLD_TYPE
+REDIS_OLD_TYPE="${REDIS_OLD_TYPE,,}"
+if [[ "$REDIS_OLD_TYPE" == "v" ]]; then
+    prompt "OLD Redis Volume Name: "
+    read -r REDIS_OLD_VOL
+    REDIS_OLD_PATH="/var/lib/docker/volumes/$REDIS_OLD_VOL/_data"
+elif [[ "$REDIS_OLD_TYPE" == "d" ]]; then
+    prompt "OLD Redis Data Path (e.g. /data/stack/redis/): "
+    read -r REDIS_OLD_PATH
+else
+    die "Invalid choice — enter 'v' for volume or 'd' for directory."
+fi
 
 # --- 2. Collect Target (New / Coolify) Container Info ---
 echo ""
@@ -70,8 +82,19 @@ prompt "NEW Redis Container ID/Name: "
 read -r NEW_REDIS
 prompt "NEW App Container ID/Name: "
 read -r NEW_APP
-prompt "NEW Redis Volume Name (e.g. redis-data-xyz): "
-read -r REDIS_VOL_NAME
+prompt "NEW Redis storage type — (v)olume or (d)irectory? [v/d]: "
+read -r REDIS_NEW_TYPE
+REDIS_NEW_TYPE="${REDIS_NEW_TYPE,,}"
+if [[ "$REDIS_NEW_TYPE" == "v" ]]; then
+    prompt "NEW Redis Volume Name (e.g. redis-data-xyz): "
+    read -r REDIS_VOL_NAME
+    REDIS_NEW_PATH="/var/lib/docker/volumes/$REDIS_VOL_NAME/_data"
+elif [[ "$REDIS_NEW_TYPE" == "d" ]]; then
+    prompt "NEW Redis Data Path (e.g. /data/coolify/redis/): "
+    read -r REDIS_NEW_PATH
+else
+    die "Invalid choice — enter 'v' for volume or 'd' for directory."
+fi
 
 # --- 3. Database Credentials ---
 echo ""
@@ -96,7 +119,11 @@ success "All containers found."
 
 # --- 5. Validate Redis Source Path ---
 if [[ ! -d "$REDIS_OLD_PATH" ]]; then
-    die "Redis data path '$REDIS_OLD_PATH' not found."
+    if [[ "$REDIS_OLD_TYPE" == "v" ]]; then
+        die "Redis source volume path '$REDIS_OLD_PATH' not found. Verify volume name '$REDIS_OLD_VOL'."
+    else
+        die "Redis source directory '$REDIS_OLD_PATH' not found."
+    fi
 fi
 
 # --- 6. Confirm Before Proceeding ---
@@ -104,7 +131,11 @@ echo ""
 echo "────────────────────────────────────────────────"
 info "Migration Plan:"
 info "  PostgreSQL : $OLD_PG -> $NEW_PG (db: $DB_NAME)"
-info "  Redis      : $OLD_REDIS -> $NEW_REDIS (vol: $REDIS_VOL_NAME)"
+if [[ "$REDIS_NEW_TYPE" == "v" ]]; then
+    info "  Redis      : $OLD_REDIS -> $NEW_REDIS (vol: $REDIS_VOL_NAME)"
+else
+    info "  Redis      : $OLD_REDIS -> $NEW_REDIS (dir: $REDIS_NEW_PATH)"
+fi
 info "  App        : $OLD_APP -> $NEW_APP"
 echo "────────────────────────────────────────────────"
 warn "This will STOP the old app and overwrite data in new containers."
@@ -171,19 +202,18 @@ fi
 info "Stopping Redis containers for physical file sync..."
 docker stop "$OLD_REDIS" "$NEW_REDIS"
 
-VOL_PATH="/var/lib/docker/volumes/$REDIS_VOL_NAME/_data"
-if [[ ! -d "$VOL_PATH" ]]; then
-    die "Volume path '$VOL_PATH' not found. Verify the volume name."
+if [[ ! -d "$REDIS_NEW_PATH" ]]; then
+    die "Target Redis path '$REDIS_NEW_PATH' not found. Verify the volume/directory name."
 fi
 
-info "Cleaning target volume..."
-rm -rf "${VOL_PATH:?}"/*
+info "Cleaning target Redis data..."
+rm -rf "${REDIS_NEW_PATH:?}"/*
 
 info "Copying Redis data files..."
-cp -rp "${REDIS_OLD_PATH%/}/." "$VOL_PATH/"
+cp -rp "${REDIS_OLD_PATH%/}/." "$REDIS_NEW_PATH/"
 
 info "Fixing permissions (UID 999)..."
-chown -R 999:999 "$VOL_PATH/"
+chown -R 999:999 "$REDIS_NEW_PATH/"
 
 success "Redis file sync complete."
 

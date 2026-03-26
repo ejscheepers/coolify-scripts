@@ -69,7 +69,7 @@ Restores a `.tar.gz` backup into a Docker volume.
 
 ### `coolify-stack-converter.sh` — Stack Converter
 
-Migrates a standalone Docker Compose stack (with bind-mounted databases) into Coolify-managed dedicated database containers using Docker volumes.
+Migrates Docker Compose stacks between environments (standalone ↔ Coolify). Supports Redis data stored in Docker volumes or bind-mount directories.
 
 ```bash
 sudo ./coolify-stack-converter.sh
@@ -78,6 +78,7 @@ sudo ./coolify-stack-converter.sh
 > **Note:** Requires `sudo` because it directly accesses Docker volume paths on disk for Redis file-level migration.
 
 - Handles PostgreSQL (pg_dump/psql) and Redis (physical file copy)
+- Redis source/target can be a Docker volume or a host directory
 - Validates all containers exist before starting
 - Aborts if pg_dump produces an empty file
 - Auto-detects Coolify-assigned Redis passwords
