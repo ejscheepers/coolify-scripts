@@ -30,18 +30,29 @@ trap cleanup EXIT
 
 # --- Validation Helpers ---
 require_container() {
-    local name="$1" label="$2"
-    if ! docker inspect "$name" &>/dev/null; then
-        die "$label container '$name' not found. Check the name/ID."
-    fi
+    local name="$1"
+    docker inspect "$name" &>/dev/null
+}
+
+prompt_container() {
+    local label="$1" var_name="$2"
+    while true; do
+        prompt "$label: "
+        read -r _val
+        if [[ -z "$_val" ]]; then
+            warn "Value cannot be empty."
+        elif require_container "$_val"; then
+            eval "$var_name=\$_val"
+            return
+        else
+            warn "Container '$_val' not found. Try again."
+        fi
+    done
 }
 
 require_running() {
-    local name="$1" label="$2"
-    if [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != "true" ]]; then
-        return 1
-    fi
-    return 0
+    local name="$1"
+    [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" == "true" ]]
 }
 
 echo ""
@@ -52,81 +63,79 @@ echo "────────────────────────�
 # --- 1. Collect Source (Old) Container Info ---
 echo ""
 info "--- Source Stack (Old) ---"
-prompt "OLD App Container ID/Name: "
-read -r OLD_APP
-prompt "OLD Postgres Container ID/Name: "
-read -r OLD_PG
-prompt "OLD Redis Container ID/Name: "
-read -r OLD_REDIS
+prompt_container "OLD App Container ID/Name" OLD_APP
+prompt_container "OLD Postgres Container ID/Name" OLD_PG
+prompt_container "OLD Redis Container ID/Name" OLD_REDIS
 
-prompt "OLD Redis storage type — (v)olume or (d)irectory? [v/d]: "
-read -r REDIS_OLD_TYPE
-REDIS_OLD_TYPE="${REDIS_OLD_TYPE,,}"
-if [[ "$REDIS_OLD_TYPE" == "v" ]]; then
-    prompt "OLD Redis Volume Name: "
-    read -r REDIS_OLD_VOL
-    REDIS_OLD_PATH="/var/lib/docker/volumes/$REDIS_OLD_VOL/_data"
-elif [[ "$REDIS_OLD_TYPE" == "d" ]]; then
-    prompt "OLD Redis Data Path (e.g. /data/stack/redis/): "
-    read -r REDIS_OLD_PATH
-else
-    die "Invalid choice — enter 'v' for volume or 'd' for directory."
-fi
+while true; do
+    prompt "OLD Redis storage type — (v)olume or (d)irectory? [v/d]: "
+    read -r REDIS_OLD_TYPE
+    REDIS_OLD_TYPE="${REDIS_OLD_TYPE,,}"
+    if [[ "$REDIS_OLD_TYPE" == "v" ]]; then
+        prompt "OLD Redis Volume Name: "
+        read -r REDIS_OLD_VOL
+        REDIS_OLD_PATH="/var/lib/docker/volumes/$REDIS_OLD_VOL/_data"
+        [[ -d "$REDIS_OLD_PATH" ]] && break
+        warn "Volume path '$REDIS_OLD_PATH' not found. Check the volume name."
+    elif [[ "$REDIS_OLD_TYPE" == "d" ]]; then
+        prompt "OLD Redis Data Path (e.g. /data/stack/redis/): "
+        read -r REDIS_OLD_PATH
+        [[ -d "$REDIS_OLD_PATH" ]] && break
+        warn "Directory '$REDIS_OLD_PATH' not found. Try again."
+    else
+        warn "Invalid choice — enter 'v' for volume or 'd' for directory."
+    fi
+done
 
 # --- 2. Collect Target (New / Coolify) Container Info ---
 echo ""
 info "--- Target Stack (Coolify) ---"
-prompt "NEW Postgres Container ID/Name: "
-read -r NEW_PG
-prompt "NEW Redis Container ID/Name: "
-read -r NEW_REDIS
-prompt "NEW App Container ID/Name: "
-read -r NEW_APP
-prompt "NEW Redis storage type — (v)olume or (d)irectory? [v/d]: "
-read -r REDIS_NEW_TYPE
-REDIS_NEW_TYPE="${REDIS_NEW_TYPE,,}"
-if [[ "$REDIS_NEW_TYPE" == "v" ]]; then
-    prompt "NEW Redis Volume Name (e.g. redis-data-xyz): "
-    read -r REDIS_VOL_NAME
-    REDIS_NEW_PATH="/var/lib/docker/volumes/$REDIS_VOL_NAME/_data"
-elif [[ "$REDIS_NEW_TYPE" == "d" ]]; then
-    prompt "NEW Redis Data Path (e.g. /data/coolify/redis/): "
-    read -r REDIS_NEW_PATH
-else
-    die "Invalid choice — enter 'v' for volume or 'd' for directory."
-fi
+prompt_container "NEW Postgres Container ID/Name" NEW_PG
+prompt_container "NEW Redis Container ID/Name" NEW_REDIS
+prompt_container "NEW App Container ID/Name" NEW_APP
+
+while true; do
+    prompt "NEW Redis storage type — (v)olume or (d)irectory? [v/d]: "
+    read -r REDIS_NEW_TYPE
+    REDIS_NEW_TYPE="${REDIS_NEW_TYPE,,}"
+    if [[ "$REDIS_NEW_TYPE" == "v" ]]; then
+        prompt "NEW Redis Volume Name (e.g. redis-data-xyz): "
+        read -r REDIS_VOL_NAME
+        REDIS_NEW_PATH="/var/lib/docker/volumes/$REDIS_VOL_NAME/_data"
+        [[ -d "$REDIS_NEW_PATH" ]] && break
+        warn "Volume path '$REDIS_NEW_PATH' not found. Check the volume name."
+    elif [[ "$REDIS_NEW_TYPE" == "d" ]]; then
+        prompt "NEW Redis Data Path (e.g. /data/coolify/redis/): "
+        read -r REDIS_NEW_PATH
+        [[ -d "$REDIS_NEW_PATH" ]] && break
+        warn "Directory '$REDIS_NEW_PATH' not found. Try again."
+    else
+        warn "Invalid choice — enter 'v' for volume or 'd' for directory."
+    fi
+done
 
 # --- 3. Database Credentials ---
 echo ""
 info "--- Database Credentials ---"
-prompt "Database Name: "
-read -r DB_NAME
-prompt "Postgres Username: "
-read -r PG_USER
+
+while true; do
+    prompt "PostgreSQL Database Name (the DB to migrate): "
+    read -r DB_NAME
+    [[ -n "$DB_NAME" ]] && break
+    warn "Database name cannot be empty."
+done
+
+while true; do
+    prompt "PostgreSQL Username (used for both old & new): "
+    read -r PG_USER
+    [[ -n "$PG_USER" ]] && break
+    warn "Username cannot be empty."
+done
+
 prompt "OLD Redis Password (leave blank if none): "
 read -r REDIS_OLD_PASS
 
-# --- 4. Validate All Containers Exist ---
-echo ""
-info "Validating containers..."
-for pair in "OLD_APP:$OLD_APP" "OLD_PG:$OLD_PG" "OLD_REDIS:$OLD_REDIS" \
-            "NEW_PG:$NEW_PG" "NEW_REDIS:$NEW_REDIS" "NEW_APP:$NEW_APP"; do
-    LABEL="${pair%%:*}"
-    CID="${pair#*:}"
-    require_container "$CID" "$LABEL"
-done
-success "All containers found."
-
-# --- 5. Validate Redis Source Path ---
-if [[ ! -d "$REDIS_OLD_PATH" ]]; then
-    if [[ "$REDIS_OLD_TYPE" == "v" ]]; then
-        die "Redis source volume path '$REDIS_OLD_PATH' not found. Verify volume name '$REDIS_OLD_VOL'."
-    else
-        die "Redis source directory '$REDIS_OLD_PATH' not found."
-    fi
-fi
-
-# --- 6. Confirm Before Proceeding ---
+# --- 4. Confirm ---
 echo ""
 echo "────────────────────────────────────────────────"
 info "Migration Plan:"
@@ -143,26 +152,26 @@ prompt "Proceed? (y/N): "
 read -r CONFIRM
 [[ "${CONFIRM,,}" != "y" ]] && die "Cancelled."
 
-# --- 7. Pre-Flight: Ensure New Services Are Running ---
+# --- 5. Pre-Flight: Ensure New Services Are Running ---
 echo ""
 info "Pre-flight checks..."
 for CID in "$NEW_PG" "$NEW_REDIS"; do
-    if ! require_running "$CID" "target"; then
+    if ! require_running "$CID"; then
         info "Starting container $CID..."
         docker start "$CID"
         sleep 3
-        if ! require_running "$CID" "target"; then
+        if ! require_running "$CID"; then
             die "Failed to start container '$CID'."
         fi
     fi
     success "$CID is running."
 done
 
-# --- 8. Freeze Old App ---
+# --- 6. Freeze Old App ---
 info "Stopping OLD app ($OLD_APP) to freeze data..."
 docker stop "$OLD_APP" || warn "Old app may already be stopped."
 
-# --- 9. PostgreSQL Migration ---
+# --- 7. PostgreSQL Migration ---
 echo ""
 info "--- PostgreSQL Migration ---"
 
@@ -188,7 +197,7 @@ success "PostgreSQL migration complete."
 rm -f "$TEMP_DUMP"
 TEMP_DUMP=""
 
-# --- 10. Redis Migration ---
+# --- 8. Redis Migration ---
 echo ""
 info "--- Redis Migration ---"
 
@@ -202,10 +211,6 @@ fi
 info "Stopping Redis containers for physical file sync..."
 docker stop "$OLD_REDIS" "$NEW_REDIS"
 
-if [[ ! -d "$REDIS_NEW_PATH" ]]; then
-    die "Target Redis path '$REDIS_NEW_PATH' not found. Verify the volume/directory name."
-fi
-
 info "Cleaning target Redis data..."
 rm -rf "${REDIS_NEW_PATH:?}"/*
 
@@ -217,7 +222,7 @@ chown -R 999:999 "$REDIS_NEW_PATH/"
 
 success "Redis file sync complete."
 
-# --- 11. Final Startup & Verification ---
+# --- 9. Final Startup & Verification ---
 echo ""
 info "--- Finalizing Cutover ---"
 

@@ -30,40 +30,51 @@ list_volumes() {
 # --- Volume Name ---
 list_volumes
 
-prompt "Target Docker volume name to restore into: "
-read -r TARGET_VOLUME
-[[ -z "$TARGET_VOLUME" ]] && die "Volume name cannot be empty."
-
-if ! docker volume ls --quiet | grep -qx "$TARGET_VOLUME"; then
+while true; do
+    prompt "Target Docker volume name to restore into: "
+    read -r TARGET_VOLUME
+    if [[ -z "$TARGET_VOLUME" ]]; then
+        warn "Volume name cannot be empty."
+        continue
+    fi
+    if docker volume ls --quiet | grep -qx "$TARGET_VOLUME"; then
+        break
+    fi
     warn "Volume '$TARGET_VOLUME' does not exist."
     prompt "Create it? (y/N): "
     read -r CREATE_VOL
     if [[ "${CREATE_VOL,,}" == "y" ]]; then
-        docker volume create "$TARGET_VOLUME" || die "Failed to create volume."
+        docker volume create "$TARGET_VOLUME" || { warn "Failed to create volume. Try again."; continue; }
         success "Volume '$TARGET_VOLUME' created."
-    else
-        die "Aborted — volume does not exist."
+        break
     fi
-fi
+    warn "Try a different volume name."
+done
 
 # --- Backup Directory ---
-prompt "Backup directory (default: ./volume-backup): "
-read -r BACKUP_DIR
-BACKUP_DIR=${BACKUP_DIR:-./volume-backup}
+while true; do
+    prompt "Backup directory (default: ./volume-backup): "
+    read -r BACKUP_DIR
+    BACKUP_DIR=${BACKUP_DIR:-./volume-backup}
 
-if [[ "$BACKUP_DIR" = /* ]]; then
-    ABS_BACKUP_DIR="$BACKUP_DIR"
-else
-    ABS_BACKUP_DIR="$(pwd)/$BACKUP_DIR"
-fi
+    if [[ "$BACKUP_DIR" = /* ]]; then
+        ABS_BACKUP_DIR="$BACKUP_DIR"
+    else
+        ABS_BACKUP_DIR="$(pwd)/$BACKUP_DIR"
+    fi
 
-[[ ! -d "$ABS_BACKUP_DIR" ]] && die "Backup directory not found: $ABS_BACKUP_DIR"
+    if [[ ! -d "$ABS_BACKUP_DIR" ]]; then
+        warn "Directory not found: $ABS_BACKUP_DIR — try again."
+        continue
+    fi
 
-# --- List & Select Backup File ---
-BACKUPS=($(ls -1t "$ABS_BACKUP_DIR"/*.tar.gz 2>/dev/null))
-if [[ ${#BACKUPS[@]} -eq 0 ]]; then
-    die "No .tar.gz files found in '$ABS_BACKUP_DIR'."
-fi
+    BACKUPS=($(ls -1t "$ABS_BACKUP_DIR"/*.tar.gz 2>/dev/null))
+    if [[ ${#BACKUPS[@]} -eq 0 ]]; then
+        warn "No .tar.gz files found in '$ABS_BACKUP_DIR'. Try a different directory."
+        continue
+    fi
+    break
+done
 
 echo ""
 info "Available backups (newest first):"
@@ -74,18 +85,18 @@ for i in "${!BACKUPS[@]}"; do
 done
 echo "────────────────────────────────────────"
 
-prompt "Select backup file [1]: "
-read -r FILE_SEL
-FILE_SEL=${FILE_SEL:-1}
-
-if [[ "$FILE_SEL" =~ ^[0-9]+$ ]] && (( FILE_SEL >= 1 && FILE_SEL <= ${#BACKUPS[@]} )); then
-    BACKUP_FILE=$(basename "${BACKUPS[$((FILE_SEL-1))]}")
-else
-    die "Invalid selection '$FILE_SEL'."
-fi
+while true; do
+    prompt "Select backup file [1]: "
+    read -r FILE_SEL
+    FILE_SEL=${FILE_SEL:-1}
+    if [[ "$FILE_SEL" =~ ^[0-9]+$ ]] && (( FILE_SEL >= 1 && FILE_SEL <= ${#BACKUPS[@]} )); then
+        BACKUP_FILE=$(basename "${BACKUPS[$((FILE_SEL-1))]}")
+        break
+    fi
+    warn "Invalid selection '$FILE_SEL'. Enter a number between 1 and ${#BACKUPS[@]}."
+done
 
 FULL_BACKUP_PATH="$ABS_BACKUP_DIR/$BACKUP_FILE"
-[[ ! -f "$FULL_BACKUP_PATH" ]] && die "File not found: $FULL_BACKUP_PATH"
 
 # --- Database Type (for permission fixing) ---
 echo ""
@@ -96,18 +107,19 @@ echo -e "  ${CYAN}[3]${NC} Redis (UID 999:1000)"
 echo -e "  ${CYAN}[4]${NC} MongoDB (UID 999:999)"
 echo -e "  ${CYAN}[5]${NC} None — skip permission fix"
 
-prompt "Select permission preset [5]: "
-read -r DB_TYPE
-DB_TYPE=${DB_TYPE:-5}
-
-case "$DB_TYPE" in
-    1) CHOWN_SPEC="999:999"; DB_LABEL="PostgreSQL" ;;
-    2) CHOWN_SPEC="999:999"; DB_LABEL="MySQL/MariaDB" ;;
-    3) CHOWN_SPEC="999:1000"; DB_LABEL="Redis" ;;
-    4) CHOWN_SPEC="999:999"; DB_LABEL="MongoDB" ;;
-    5) CHOWN_SPEC=""; DB_LABEL="None" ;;
-    *) warn "Unknown selection, skipping permission fix."; CHOWN_SPEC=""; DB_LABEL="None" ;;
-esac
+while true; do
+    prompt "Select permission preset [5]: "
+    read -r DB_TYPE
+    DB_TYPE=${DB_TYPE:-5}
+    case "$DB_TYPE" in
+        1) CHOWN_SPEC="999:999"; DB_LABEL="PostgreSQL"; break ;;
+        2) CHOWN_SPEC="999:999"; DB_LABEL="MySQL/MariaDB"; break ;;
+        3) CHOWN_SPEC="999:1000"; DB_LABEL="Redis"; break ;;
+        4) CHOWN_SPEC="999:999"; DB_LABEL="MongoDB"; break ;;
+        5) CHOWN_SPEC=""; DB_LABEL="None"; break ;;
+        *) warn "Invalid selection '$DB_TYPE'. Enter a number between 1 and 5." ;;
+    esac
+done
 
 # --- Safety Confirmation ---
 echo ""

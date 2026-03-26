@@ -30,15 +30,17 @@ list_volumes() {
 # --- Volume Name ---
 list_volumes
 
-prompt "Enter the Docker volume name to back up: "
-read -r VOLUME_NAME
-
-[[ -z "$VOLUME_NAME" ]] && die "Volume name cannot be empty."
-
-if ! docker volume ls --quiet | grep -qx "$VOLUME_NAME"; then
-    die "Volume '$VOLUME_NAME' does not exist."
-fi
-
+while true; do
+    prompt "Enter the Docker volume name to back up: "
+    read -r VOLUME_NAME
+    if [[ -z "$VOLUME_NAME" ]]; then
+        warn "Volume name cannot be empty."
+    elif docker volume ls --quiet | grep -qx "$VOLUME_NAME"; then
+        break
+    else
+        warn "Volume '$VOLUME_NAME' does not exist. Try again."
+    fi
+done
 info "Volume '$VOLUME_NAME' found."
 
 # --- Backup Directory ---

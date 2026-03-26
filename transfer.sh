@@ -29,30 +29,40 @@ info "Tailscale SCP Transfer"
 echo "────────────────────────────────────────"
 
 # --- Collect Connection Details ---
-prompt "SSH username${DEFAULT_SSH_USER:+ (default: $DEFAULT_SSH_USER)}: "
-read -r SSH_USER
-SSH_USER=${SSH_USER:-$DEFAULT_SSH_USER}
-[[ -z "$SSH_USER" ]] && die "SSH username is required."
+while true; do
+    prompt "SSH username${DEFAULT_SSH_USER:+ (default: $DEFAULT_SSH_USER)}: "
+    read -r SSH_USER
+    SSH_USER=${SSH_USER:-$DEFAULT_SSH_USER}
+    [[ -n "$SSH_USER" ]] && break
+    warn "SSH username is required."
+done
 
-prompt "Tailscale IP${DEFAULT_SSH_IP:+ (default: $DEFAULT_SSH_IP)}: "
-read -r SSH_IP
-SSH_IP=${SSH_IP:-$DEFAULT_SSH_IP}
-[[ -z "$SSH_IP" ]] && die "Tailscale IP is required."
+while true; do
+    prompt "Tailscale IP${DEFAULT_SSH_IP:+ (default: $DEFAULT_SSH_IP)}: "
+    read -r SSH_IP
+    SSH_IP=${SSH_IP:-$DEFAULT_SSH_IP}
+    [[ -n "$SSH_IP" ]] && break
+    warn "Tailscale IP is required."
+done
 
 # --- Source Selection ---
-prompt "Local backup directory (default: $DEFAULT_SOURCE_DIR): "
-read -r SOURCE_DIR
-SOURCE_DIR=${SOURCE_DIR:-$DEFAULT_SOURCE_DIR}
+while true; do
+    prompt "Local backup directory (default: $DEFAULT_SOURCE_DIR): "
+    read -r SOURCE_DIR
+    SOURCE_DIR=${SOURCE_DIR:-$DEFAULT_SOURCE_DIR}
 
-if [[ ! -d "$SOURCE_DIR" ]]; then
-    die "Source directory '$SOURCE_DIR' not found."
-fi
+    if [[ ! -d "$SOURCE_DIR" ]]; then
+        warn "Directory '$SOURCE_DIR' not found. Try again."
+        continue
+    fi
 
-# List available backup files for selection
-BACKUPS=($(ls -1t "$SOURCE_DIR"/*.tar.gz 2>/dev/null))
-if [[ ${#BACKUPS[@]} -eq 0 ]]; then
-    die "No .tar.gz backup files found in '$SOURCE_DIR'."
-fi
+    BACKUPS=($(ls -1t "$SOURCE_DIR"/*.tar.gz 2>/dev/null))
+    if [[ ${#BACKUPS[@]} -eq 0 ]]; then
+        warn "No .tar.gz backup files found in '$SOURCE_DIR'. Try a different directory."
+        continue
+    fi
+    break
+done
 
 echo ""
 info "Available backups (newest first):"
@@ -64,18 +74,21 @@ done
 echo -e "  ${CYAN}[A]${NC} Transfer ALL files"
 echo "────────────────────────────────────────"
 
-prompt "Select file(s) to transfer [1]: "
-read -r SELECTION
-SELECTION=${SELECTION:-1}
+while true; do
+    prompt "Select file(s) to transfer [1]: "
+    read -r SELECTION
+    SELECTION=${SELECTION:-1}
 
-if [[ "${SELECTION^^}" == "A" ]]; then
-    SELECTED_FILES=("${BACKUPS[@]}")
-    info "Transferring all ${#BACKUPS[@]} backup(s)."
-elif [[ "$SELECTION" =~ ^[0-9]+$ ]] && (( SELECTION >= 1 && SELECTION <= ${#BACKUPS[@]} )); then
-    SELECTED_FILES=("${BACKUPS[$((SELECTION-1))]}")
-else
-    die "Invalid selection '$SELECTION'."
-fi
+    if [[ "${SELECTION^^}" == "A" ]]; then
+        SELECTED_FILES=("${BACKUPS[@]}")
+        info "Transferring all ${#BACKUPS[@]} backup(s)."
+        break
+    elif [[ "$SELECTION" =~ ^[0-9]+$ ]] && (( SELECTION >= 1 && SELECTION <= ${#BACKUPS[@]} )); then
+        SELECTED_FILES=("${BACKUPS[$((SELECTION-1))]}")
+        break
+    fi
+    warn "Invalid selection '$SELECTION'. Enter a number between 1 and ${#BACKUPS[@]}, or 'A' for all."
+done
 
 # --- Destination ---
 prompt "Remote destination path (default: $DEFAULT_DEST_DIR): "
