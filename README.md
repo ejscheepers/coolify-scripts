@@ -33,10 +33,11 @@ End-to-end volume migration that combines backup, transfer, and restore into a s
 ```
 
 - Single command: backup → SCP transfer → remote restore
+- **Multiple volume pairs** in one run: choose how many mappings (e.g. three locals → three remotes) in order
 - Lists local and remote Docker volumes for selection
 - Tests SSH connectivity before starting
-- Permission presets for PostgreSQL, MySQL/MariaDB, Redis, and MongoDB
-- Optional safety backup of the remote volume before overwriting
+- **Permissions match the source** (tar preserves mode and ownership)
+- Optional safety backup of each remote volume before overwriting
 - Automatic cleanup of temp files on both servers
 - Supports env-var defaults: `MIGRATE_SSH_USER`, `MIGRATE_SSH_IP`, `MIGRATE_REMOTE_DIR`
 
