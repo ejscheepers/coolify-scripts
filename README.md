@@ -13,59 +13,32 @@ curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/in
 Or pick only the scripts you need:
 
 ```bash
-# Just backup + restore
-curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/install.sh | INSTALL=backup,restore bash
-
-# Just the transfer script
-curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/install.sh | INSTALL=transfer bash
+# Just the volume migrator
+curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/install.sh | INSTALL=migrate bash
 
 # Just the stack converter
 curl -fsSL https://raw.githubusercontent.com/ejscheepers/coolify-scripts/main/install.sh | INSTALL=converter bash
 ```
 
-Available names: `backup`, `transfer`, `restore`, `converter`, `cleanup`
+Available names: `migrate`, `converter`, `cleanup`
 
 ## Scripts
 
-### `backup.sh` — Volume Backup
+### `migrate-volume.sh` — Volume Migration
 
-Backs up a Docker volume to a timestamped `.tar.gz` archive.
-
-```bash
-./backup.sh
-```
-
-- Lists available Docker volumes for easy selection
-- Saves to `./volume-backup/` by default (configurable)
-- Timestamped filenames prevent accidental overwrites
-- Reports backup size on completion
-
-### `transfer.sh` — Tailscale SCP Transfer
-
-Transfers backup files to a remote server over Tailscale SSH.
+End-to-end volume migration that combines backup, transfer, and restore into a single command. Runs on the source server and restores remotely via Tailscale SSH.
 
 ```bash
-./transfer.sh
+./migrate-volume.sh
 ```
 
-- Fully interactive — prompts for SSH user, Tailscale IP, and paths
-- Lists available backups with file sizes for selection
-- Transfer a single file or all backups at once
-- Creates the remote directory automatically
-- Supports env-var defaults: `TRANSFER_SSH_USER`, `TRANSFER_SSH_IP`, `TRANSFER_SOURCE_DIR`, `TRANSFER_DEST_DIR`
-
-### `restore.sh` — Volume Restore
-
-Restores a `.tar.gz` backup into a Docker volume.
-
-```bash
-./restore.sh
-```
-
-- Lists available volumes and backup files for selection
+- Single command: backup → SCP transfer → remote restore
+- Lists local and remote Docker volumes for selection
+- Tests SSH connectivity before starting
 - Permission presets for PostgreSQL, MySQL/MariaDB, Redis, and MongoDB
-- Optional safety backup of the target volume before overwriting
-- Creates the target volume if it doesn't exist
+- Optional safety backup of the remote volume before overwriting
+- Automatic cleanup of temp files on both servers
+- Supports env-var defaults: `MIGRATE_SSH_USER`, `MIGRATE_SSH_IP`, `MIGRATE_REMOTE_DIR`
 
 ### `coolify-stack-converter.sh` — Stack Converter
 
@@ -100,16 +73,13 @@ Removes all installed scripts and optionally deletes backup files.
 ## Typical Migration Workflow
 
 ```
-Source Server                          Target Server
-─────────────                          ─────────────
-1. ./backup.sh                         3. ./restore.sh
-2. ./transfer.sh ──── Tailscale ────►
+Source Server ─── ./migrate-volume.sh ── Tailscale ──► Target Server
 ```
 
-Or for full standalone-to-Coolify conversions, run `coolify-stack-converter.sh` directly on the server.
+For full standalone-to-Coolify stack conversions (PostgreSQL + Redis), run `coolify-stack-converter.sh` directly on the server.
 
 ## Requirements
 
 - Docker
-- Tailscale (for `transfer.sh`)
+- Tailscale (for `migrate-volume.sh`)
 - `bash` 4.0+

@@ -14,9 +14,7 @@ warn()    { echo -e "${YELLOW}[ $SCRIPT_NAME ]${NC} [ WARN ] $1"; }
 prompt()  { echo -en "${CYAN}[ $SCRIPT_NAME ]${NC} [ INPUT ] $1"; }
 
 SCRIPTS=(
-    "backup.sh"
-    "transfer.sh"
-    "restore.sh"
+    "migrate-volume.sh"
     "coolify-stack-converter.sh"
     "install.sh"
 )

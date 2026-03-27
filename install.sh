@@ -6,7 +6,7 @@ set -euo pipefail
 # Set INSTALL env var to pick specific scripts, or omit for all.
 #
 #   curl ... | bash                              # all scripts
-#   curl ... | INSTALL=backup,restore bash       # just those two
+#   curl ... | INSTALL=migrate bash               # just the volume migrator
 
 REPO="ejscheepers/coolify-scripts"
 BRANCH="main"
@@ -16,14 +16,12 @@ GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; DIM='\033[2m'; NC='\033
 
 # --- Map short names to filenames ---
 declare -A SCRIPT_MAP=(
-    [backup]="backup.sh"
-    [transfer]="transfer.sh"
-    [restore]="restore.sh"
+    [migrate]="migrate-volume.sh"
     [converter]="coolify-stack-converter.sh"
     [cleanup]="cleanup.sh"
 )
 
-ALL_SCRIPTS=("backup.sh" "transfer.sh" "restore.sh" "coolify-stack-converter.sh" "cleanup.sh")
+ALL_SCRIPTS=("migrate-volume.sh" "coolify-stack-converter.sh" "cleanup.sh")
 
 # --- Resolve INSTALL env var ---
 SCRIPTS=()
@@ -38,7 +36,7 @@ else
             SCRIPTS+=("${SCRIPT_MAP[$SEL]}")
         else
             echo -e "${RED}Unknown script: '$SEL'${NC}"
-            echo "Available: backup, transfer, restore, converter"
+            echo "Available: migrate, converter, cleanup"
             exit 1
         fi
     done
@@ -79,9 +77,7 @@ echo ""
 echo "Usage:"
 for SCRIPT in "${SCRIPTS[@]}"; do
     case "$SCRIPT" in
-        backup.sh)                    echo "  ./backup.sh                      # Back up a Docker volume" ;;
-        transfer.sh)                  echo "  ./transfer.sh                    # Transfer backups via Tailscale" ;;
-        restore.sh)                   echo "  ./restore.sh                     # Restore a backup into a volume" ;;
+        migrate-volume.sh)            echo "  ./migrate-volume.sh              # Migrate a volume over Tailscale" ;;
         coolify-stack-converter.sh)   echo "  sudo ./coolify-stack-converter.sh # Migrate standalone stack to Coolify" ;;
         cleanup.sh)                   echo "  ./cleanup.sh                     # Remove scripts and backups" ;;
     esac
