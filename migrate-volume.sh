@@ -32,6 +32,9 @@ trap cleanup EXIT
 DEFAULT_SSH_USER="${MIGRATE_SSH_USER:-}"
 DEFAULT_SSH_IP="${MIGRATE_SSH_IP:-}"
 DEFAULT_REMOTE_DIR="${MIGRATE_REMOTE_DIR:-/tmp/volume-migrate}"
+
+# Auto-accept new host keys on first connection; reject if key changes (MITM protection)
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 # bookworm-slim ships GNU tar; --numeric-owner keeps UID/GID when passwd differs between hosts
 TAR_IMAGE="${MIGRATE_TAR_IMAGE:-debian:bookworm-slim}"
 
@@ -60,7 +63,7 @@ resolve_volume_pick() {
     if [[ -z "$ssh_target" ]]; then
         docker volume inspect "$input" &>/dev/null || return 1
     else
-        ssh "$ssh_target" "docker volume inspect '$input'" &>/dev/null || return 1
+        ssh "${SSH_OPTS[@]}" "$ssh_target" "docker volume inspect '$input'" &>/dev/null || return 1
     fi
     echo "$input"
     return 0
@@ -109,7 +112,7 @@ done
 SSH_TARGET="$SSH_USER@$SSH_IP"
 
 info "Testing SSH connection to $SSH_TARGET..."
-if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "$SSH_TARGET" "echo ok" &>/dev/null; then
+if ! ssh "${SSH_OPTS[@]}" -o BatchMode=yes "$SSH_TARGET" "echo ok" &>/dev/null; then
     die "Cannot reach $SSH_TARGET via SSH. Check Tailscale and SSH config."
 fi
 success "SSH connection OK."
@@ -162,7 +165,7 @@ echo ""
 info "--- Target volumes (remote server) ---"
 
 refresh_remote_volumes() {
-    readarray -t REMOTE_VOL_NAMES < <(ssh "$SSH_TARGET" "docker volume ls -q" 2>/dev/null || true)
+    readarray -t REMOTE_VOL_NAMES < <(ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "docker volume ls -q" 2>/dev/null || true)
 }
 
 refresh_remote_volumes
@@ -203,7 +206,7 @@ for ((i = 0; i < NUM_PAIRS; i++)); do
             continue
         fi
 
-        if ssh "$SSH_TARGET" "docker volume ls --quiet | grep -qx '$TARGET_VOLUME'" 2>/dev/null; then
+        if ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "docker volume ls --quiet | grep -qx '$TARGET_VOLUME'" 2>/dev/null; then
             TARGET_VOLUMES+=("$TARGET_VOLUME")
             success "  Remote volume '$TARGET_VOLUME' exists."
             refresh_remote_volumes
@@ -214,7 +217,7 @@ for ((i = 0; i < NUM_PAIRS; i++)); do
         prompt "  Create it? (y/N): "
         read -r CREATE_VOL
         if [[ "${CREATE_VOL,,}" == "y" ]]; then
-            if ssh "$SSH_TARGET" "docker volume create '$TARGET_VOLUME'" &>/dev/null; then
+            if ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "docker volume create '$TARGET_VOLUME'" &>/dev/null; then
                 success "  Volume '$TARGET_VOLUME' created on remote."
                 TARGET_VOLUMES+=("$TARGET_VOLUME")
                 refresh_remote_volumes
@@ -256,7 +259,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REMOTE_DIR="$DEFAULT_REMOTE_DIR"
 
 info "Ensuring remote directory $REMOTE_DIR exists..."
-ssh "$SSH_TARGET" "mkdir -p '$REMOTE_DIR'" || die "Could not create remote directory."
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "mkdir -p '$REMOTE_DIR'" || die "Could not create remote directory."
 
 # --- 8. Migrate each pair ---
 
@@ -290,7 +293,7 @@ for ((i = 0; i < NUM_PAIRS; i++)); do
     echo ""
     info "--- Step 2/4: Transfer ---"
     info "Transferring $BACKUP_FILE ($BACKUP_SIZE)..."
-    if ! scp -rpC "$LOCAL_BACKUP_FILE" "$SSH_TARGET:$REMOTE_DIR/$BACKUP_FILE"; then
+    if ! scp "${SSH_OPTS[@]}" -rpC "$LOCAL_BACKUP_FILE" "$SSH_TARGET:$REMOTE_DIR/$BACKUP_FILE"; then
         die "Transfer failed for '$SOURCE_VOLUME'. Hint: run 'sudo ufw allow in on tailscale0' on the target host."
     fi
     success "Transfer complete."
@@ -303,7 +306,7 @@ for ((i = 0; i < NUM_PAIRS; i++)); do
     if [[ "${SAFETY_BACKUP,,}" == "y" ]]; then
         info "Creating safety backup of '$TARGET_VOLUME' on remote..."
         SAFETY_FILE="${SAFE_SRC}-pre-migrate-${TIMESTAMP}-p${pair_num}.tar.gz"
-        ssh "$SSH_TARGET" "docker run --rm \
+        ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "docker run --rm \
           -v '$TARGET_VOLUME':/volume:ro \
           -v '$REMOTE_DIR':/backup \
           '$TAR_IMAGE' \
@@ -313,7 +316,7 @@ for ((i = 0; i < NUM_PAIRS; i++)); do
     fi
 
     info "Restoring into remote volume '$TARGET_VOLUME' (same UID/GID and modes as source)..."
-    ssh "$SSH_TARGET" "docker run --rm \
+    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "docker run --rm \
       -v '$TARGET_VOLUME':/volume \
       -v '$REMOTE_DIR':/backup \
       '$TAR_IMAGE' \
@@ -325,13 +328,13 @@ for ((i = 0; i < NUM_PAIRS; i++)); do
     echo ""
     info "--- Step 4/4: Cleanup (this pair) ---"
     info "Removing transferred backup from remote..."
-    ssh "$SSH_TARGET" "rm -f '$REMOTE_DIR/$BACKUP_FILE'" || warn "Could not remove remote backup file."
+    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "rm -f '$REMOTE_DIR/$BACKUP_FILE'" || warn "Could not remove remote backup file."
     success "Pair $pair_num done."
 done
 
 echo ""
 info "Removing empty remote migrate directory if possible..."
-ssh "$SSH_TARGET" "rmdir '$REMOTE_DIR' 2>/dev/null" || true
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "rmdir '$REMOTE_DIR' 2>/dev/null" || true
 
 # --- Done ---
 
